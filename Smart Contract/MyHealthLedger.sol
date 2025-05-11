@@ -8,34 +8,34 @@ contract MyHealthLedger {
     struct EHR {
         string ipfsHash;
         uint256 timestamp;
-        address practitioner;
+        address hcp; 
     }
 
-    struct Doctor {
+    struct HCP {
         address metamaskAddress;
         mapping(address => bool) availablePatients;
     }
 
     struct Patient {
         address metamaskAddress;
-        mapping(address => bool) authorizedDoctors;
-        mapping(address => EHR[]) ehrs; // doctor => list of EHRs
+        mapping(address => bool) authorizedHCPs;  
+        mapping(address => EHR[]) ehrs; // mapping from HCP to list of EHRs
     }
 
-    mapping(address => Doctor) public doctors;
+    mapping(address => HCP) public hcps;  
     mapping(address => Patient) public patients;
 
     mapping(address => string) public userIPFSHashes;
 
-    address[] public doctorAddresses;
+    address[] public hcpAddresses;  
     address[] public patientAddresses;
 
-    event AccessGranted(address indexed patient, address indexed doctor);
-    event AccessRevoked(address indexed patient, address indexed doctor);
+    event AccessGranted(address indexed patient, address indexed hcp);  
+    event AccessRevoked(address indexed patient, address indexed hcp);   
     event UserProfileLinked(address indexed user, string ipfsHash);
-    event DoctorSignedIn(address indexed doctor);
+    event HCPSignedIn(address indexed hcp);  
     event PatientSignedIn(address indexed patient);
-    event PtaientEHRIPFSHashStored(address indexed patient, address indexed doctor, string ipfsHash);
+    event PatientEHRIPFSHashStored(address indexed patient, address indexed hcp, string ipfsHash);  
 
     modifier onlyActiveContract() {
         require(isContractActive, "Contract is no longer active");
@@ -46,12 +46,12 @@ contract MyHealthLedger {
         owner = msg.sender;
     }
 
-    function createDoctor() public onlyActiveContract {
-        if (doctors[msg.sender].metamaskAddress == address(0)) {
-            doctors[msg.sender].metamaskAddress = msg.sender;
-            doctorAddresses.push(msg.sender);
+    function createHCP() public onlyActiveContract {
+        if (hcps[msg.sender].metamaskAddress == address(0)) {
+            hcps[msg.sender].metamaskAddress = msg.sender;
+            hcpAddresses.push(msg.sender);
         }
-        emit DoctorSignedIn(msg.sender);
+        emit HCPSignedIn(msg.sender);  // Emit the HCPSignedIn event
     }
 
     function createPatient() public onlyActiveContract {
@@ -62,25 +62,25 @@ contract MyHealthLedger {
         emit PatientSignedIn(msg.sender);
     }
 
-    function grantAccess(address doctor) external onlyActiveContract {
+    function grantAccess(address hcp) external onlyActiveContract {
         require(
-            patients[msg.sender].metamaskAddress != doctor,
+            patients[msg.sender].metamaskAddress != hcp,
             "Patient cannot grant access to themselves"
         );
-        patients[msg.sender].authorizedDoctors[doctor] = true;
-        doctors[doctor].availablePatients[msg.sender] = true;
+        patients[msg.sender].authorizedHCPs[hcp] = true;  // Grant access to the HCP
+        hcps[hcp].availablePatients[msg.sender] = true;
 
-        emit AccessGranted(msg.sender, doctor);
+        emit AccessGranted(msg.sender, hcp);  // Emit AccessGranted event
     }
 
-    function revokeAccess(address doctor) external onlyActiveContract {
+    function revokeAccess(address hcp) external onlyActiveContract {
         require(
-            patients[msg.sender].authorizedDoctors[doctor],
+            patients[msg.sender].authorizedHCPs[hcp],
             "Access not granted"
         );
-        patients[msg.sender].authorizedDoctors[doctor] = false;
-        doctors[doctor].availablePatients[msg.sender] = false;
-        emit AccessRevoked(msg.sender, doctor);
+        patients[msg.sender].authorizedHCPs[hcp] = false;  // Revoke access from the HCP
+        hcps[hcp].availablePatients[msg.sender] = false;
+        emit AccessRevoked(msg.sender, hcp);  // Emit AccessRevoked event
     }
 
     function viewAvailablePatients()
@@ -91,7 +91,7 @@ contract MyHealthLedger {
     {
         uint256 count;
         for (uint256 i = 0; i < patientAddresses.length; i++) {
-            if (doctors[msg.sender].availablePatients[patientAddresses[i]]) {
+            if (hcps[msg.sender].availablePatients[patientAddresses[i]]) {
                 count++;
             }
         }
@@ -99,72 +99,58 @@ contract MyHealthLedger {
         address[] memory availablePatients = new address[](count);
         uint256 index;
         for (uint256 i = 0; i < patientAddresses.length; i++) {
-            if (doctors[msg.sender].availablePatients[patientAddresses[i]]) {
+            if (hcps[msg.sender].availablePatients[patientAddresses[i]]) {
                 availablePatients[index++] = patientAddresses[i];
             }
         }
         return availablePatients;
     }
 
-    function viewAuthorizedDoctors()
+    function viewAuthorizedHCPs()
         external
         view
         onlyActiveContract
         returns (address[] memory)
     {
         uint256 count;
-        for (uint256 i = 0; i < doctorAddresses.length; i++) {
-            if (patients[msg.sender].authorizedDoctors[doctorAddresses[i]]) {
+        for (uint256 i = 0; i < hcpAddresses.length; i++) {
+            if (patients[msg.sender].authorizedHCPs[hcpAddresses[i]]) {
                 count++;
             }
         }
 
-        address[] memory authorizedDoctors = new address[](count);
+        address[] memory authorizedHCPs = new address[](count); 
         uint256 index;
-        for (uint256 i = 0; i < doctorAddresses.length; i++) {
-            if (patients[msg.sender].authorizedDoctors[doctorAddresses[i]]) {
-                authorizedDoctors[index++] = doctorAddresses[i];
+        for (uint256 i = 0; i < hcpAddresses.length; i++) {
+            if (patients[msg.sender].authorizedHCPs[hcpAddresses[i]]) {
+                authorizedHCPs[index++] = hcpAddresses[i];
             }
         }
 
-        return authorizedDoctors;
+        return authorizedHCPs;
     }
 
-    function viewPatientEHR(address patient)
-        external
-        view
-        onlyActiveContract
-        returns (EHR[] memory)
-    {
-        require(
-            doctors[msg.sender].metamaskAddress != address(0),
-            "Doctor not found"
-        );
-        require(
-            patients[patient].authorizedDoctors[msg.sender],
-            "Access not granted"
-        );
-        return patients[patient].ehrs[msg.sender];
-    }
-
+    // Function to store the patient's EHR IPFS hash and associate it with the HCP
     function storePatientEHRIPFSHash(address patient, string memory ipfsHash)
         external
         onlyActiveContract
     {
-        require(doctors[msg.sender].metamaskAddress != address(0), "Doctor not found");
-        require(patients[patient].authorizedDoctors[msg.sender], "Access not granted");
+        require(hcps[msg.sender].metamaskAddress != address(0), "HCP not found");
+        require(patients[patient].authorizedHCPs[msg.sender], "Access not granted");
 
+        // Store the EHR in the patient's record with the HCP's address
         patients[patient].ehrs[msg.sender].push(
             EHR({
                 ipfsHash: ipfsHash,
                 timestamp: block.timestamp,
-                practitioner: msg.sender
+                hcp: msg.sender  
             })
         );
 
-        emit PtaientEHRIPFSHashStored(patient, msg.sender, ipfsHash);
+        emit PatientEHRIPFSHashStored(patient, msg.sender, ipfsHash);  // Emit event for storing EHR
     }
 
+    // Function to store the user profile's IPFS hash (e.g., for a patient or HCP profile)
     function storeUserProfileIPFSHash(string memory _hash)
         public
         onlyActiveContract
@@ -178,13 +164,13 @@ contract MyHealthLedger {
         isContractActive = false;
     }
 
-    function getDoctorAddresses()
+    function getHCPAddresses()
         public
         view
         onlyActiveContract
         returns (address[] memory)
     {
-        return doctorAddresses;
+        return hcpAddresses;  // Return list of HCP addresses
     }
 
     function getPatientAddresses()
