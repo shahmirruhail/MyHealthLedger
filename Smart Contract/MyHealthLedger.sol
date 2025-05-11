@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 contract MyHealthLedger {
     address public owner;
-    bool public isContractActive = true; // Flag to track the contract's active status
+    bool public isContractActive = true;
 
     struct EHR {
         string ipfsHash;
@@ -19,14 +19,13 @@ contract MyHealthLedger {
     struct Patient {
         address metamaskAddress;
         mapping(address => bool) authorizedDoctors;
-        mapping(address => EHR[]) ehrs;
+        mapping(address => EHR[]) ehrs; // doctor => list of EHRs
     }
 
     mapping(address => Doctor) public doctors;
     mapping(address => Patient) public patients;
+
     mapping(address => string) public userIPFSHashes;
-    mapping(address => string) public patientEHRIPFSHashes;
-    mapping(address => address) public ehrPractitioners;
 
     address[] public doctorAddresses;
     address[] public patientAddresses;
@@ -36,6 +35,7 @@ contract MyHealthLedger {
     event UserProfileLinked(address indexed user, string ipfsHash);
     event DoctorSignedIn(address indexed doctor);
     event PatientSignedIn(address indexed patient);
+    event PtaientEHRIPFSHashStored(address indexed patient, address indexed doctor, string ipfsHash);
 
     modifier onlyActiveContract() {
         require(isContractActive, "Contract is no longer active");
@@ -47,9 +47,7 @@ contract MyHealthLedger {
     }
 
     function createDoctor() public onlyActiveContract {
-        // Check if the doctor already exists
         if (doctors[msg.sender].metamaskAddress == address(0)) {
-            // If the doctor does not exist, create a new doctor
             doctors[msg.sender].metamaskAddress = msg.sender;
             doctorAddresses.push(msg.sender);
         }
@@ -57,9 +55,7 @@ contract MyHealthLedger {
     }
 
     function createPatient() public onlyActiveContract {
-        // Check if the patient already exists
         if (patients[msg.sender].metamaskAddress == address(0)) {
-            // If the patient does not exist, create a new patient
             patients[msg.sender].metamaskAddress = msg.sender;
             patientAddresses.push(msg.sender);
         }
@@ -93,12 +89,18 @@ contract MyHealthLedger {
         onlyActiveContract
         returns (address[] memory)
     {
-        address[] memory availablePatients;
-        uint256 count = 0;
+        uint256 count;
         for (uint256 i = 0; i < patientAddresses.length; i++) {
             if (doctors[msg.sender].availablePatients[patientAddresses[i]]) {
-                availablePatients[count] = patientAddresses[i];
                 count++;
+            }
+        }
+
+        address[] memory availablePatients = new address[](count);
+        uint256 index;
+        for (uint256 i = 0; i < patientAddresses.length; i++) {
+            if (doctors[msg.sender].availablePatients[patientAddresses[i]]) {
+                availablePatients[index++] = patientAddresses[i];
             }
         }
         return availablePatients;
@@ -110,7 +112,7 @@ contract MyHealthLedger {
         onlyActiveContract
         returns (address[] memory)
     {
-        uint256 count = 0;
+        uint256 count;
         for (uint256 i = 0; i < doctorAddresses.length; i++) {
             if (patients[msg.sender].authorizedDoctors[doctorAddresses[i]]) {
                 count++;
@@ -118,20 +120,22 @@ contract MyHealthLedger {
         }
 
         address[] memory authorizedDoctors = new address[](count);
-        uint256 index = 0;
+        uint256 index;
         for (uint256 i = 0; i < doctorAddresses.length; i++) {
             if (patients[msg.sender].authorizedDoctors[doctorAddresses[i]]) {
-                authorizedDoctors[index] = doctorAddresses[i];
-                index++;
+                authorizedDoctors[index++] = doctorAddresses[i];
             }
         }
 
         return authorizedDoctors;
     }
 
-    function viewPatientEHR(
-        address patient
-    ) external view onlyActiveContract returns (EHR[] memory) {
+    function viewPatientEHR(address patient)
+        external
+        view
+        onlyActiveContract
+        returns (EHR[] memory)
+    {
         require(
             doctors[msg.sender].metamaskAddress != address(0),
             "Doctor not found"
@@ -143,23 +147,35 @@ contract MyHealthLedger {
         return patients[patient].ehrs[msg.sender];
     }
 
-    function storeUserProfileIPFSHash(
-        string memory _hash
-    ) public onlyActiveContract {
+    function storePatientEHRIPFSHash(address patient, string memory ipfsHash)
+        external
+        onlyActiveContract
+    {
+        require(doctors[msg.sender].metamaskAddress != address(0), "Doctor not found");
+        require(patients[patient].authorizedDoctors[msg.sender], "Access not granted");
+
+        patients[patient].ehrs[msg.sender].push(
+            EHR({
+                ipfsHash: ipfsHash,
+                timestamp: block.timestamp,
+                practitioner: msg.sender
+            })
+        );
+
+        emit PtaientEHRIPFSHashStored(patient, msg.sender, ipfsHash);
+    }
+
+    function storeUserProfileIPFSHash(string memory _hash)
+        public
+        onlyActiveContract
+    {
         userIPFSHashes[msg.sender] = _hash;
         emit UserProfileLinked(msg.sender, _hash);
     }
 
-    function storePatientEHRIPFSHash(
-        string memory _hash
-    ) public onlyActiveContract {
-        patientEHRIPFSHashes[msg.sender] = _hash;
-    }
-
     function destroyContract() public onlyActiveContract {
         require(msg.sender == owner, "Only the owner can destroy the contract");
-        isContractActive = false; // Mark the contract as no longer active
-        // selfdestruct(payable(owner));
+        isContractActive = false;
     }
 
     function getDoctorAddresses()
